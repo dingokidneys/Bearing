@@ -330,7 +330,7 @@
     // Android: alpha is compass heading (degrees from North, increasing CW)
     else if (e.alpha !== null && e.alpha !== undefined) {
       // On Android, alpha=0 means magnetic north
-      bearing = (270 - e.alpha) % 360;
+      bearing = (360 - e.alpha) % 360;
       accDot.classList.remove('low');
       statusEl.textContent = 'Live';
     }
