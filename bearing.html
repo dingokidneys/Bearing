@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Bearing</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;600&display=swap');
+
+  :root {
+    --bg: #0a0a0c;
+    --surface: #111116;
+    --ring: #1e1e28;
+    --accent: #00ffe0;
+    --accent-dim: rgba(0,255,224,0.12);
+    --warn: #ff4e4e;
+    --text: #e8e8f0;
+    --muted: #444458;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Rajdhani', sans-serif;
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .app {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100vw;
+    height: 100dvh;
+    gap: 0;
+    position: relative;
+  }
+
+  /* ── Dial ── */
+  .dial-wrap {
+    position: relative;
+    width: min(76vw, 340px);
+    aspect-ratio: 1;
+    margin-bottom: 28px;
+  }
+
+  .dial-wrap svg {
+    width: 100%; height: 100%;
+    overflow: visible;
+  }
+
+  /* rotating ring */
+  #ring {
+    transform-origin: 50% 50%;
+    transition: transform 0.15s cubic-bezier(0.25,0.46,0.45,0.94);
+  }
+
+  /* fixed needle */
+  .needle-group {
+    pointer-events: none;
+  }
+
+  /* ── Readout ── */
+  .readout {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1;
+    user-select: none;
+  }
+
+  .bearing-value {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: clamp(72px, 20vw, 108px);
+    color: var(--accent);
+    text-shadow: 0 0 30px rgba(0,255,224,0.5), 0 0 60px rgba(0,255,224,0.2);
+    letter-spacing: -2px;
+    transition: color 0.2s;
+  }
+
+  .bearing-unit {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: clamp(18px, 5vw, 26px);
+    color: var(--muted);
+    letter-spacing: 4px;
+    margin-top: 4px;
+  }
+
+  .cardinal {
+    margin-top: 16px;
+    font-size: clamp(24px, 7vw, 38px);
+    font-weight: 600;
+    letter-spacing: 6px;
+    color: var(--text);
+    opacity: 0.85;
+    text-transform: uppercase;
+    min-height: 1.2em;
+  }
+
+  /* ── Status / error ── */
+  .status {
+    position: absolute;
+    bottom: 36px;
+    left: 0; right: 0;
+    text-align: center;
+    font-size: 13px;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+    padding: 0 24px;
+  }
+
+  .status.error { color: var(--warn); }
+
+  /* permission button */
+  #permBtn {
+    display: none;
+    margin-top: 20px;
+    padding: 14px 32px;
+    background: transparent;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: background 0.2s, color 0.2s;
+  }
+  #permBtn:active {
+    background: var(--accent);
+    color: var(--bg);
+  }
+
+  /* subtle scanline atmosphere */
+  .app::after {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 3px,
+      rgba(0,0,0,0.06) 3px,
+      rgba(0,0,0,0.06) 4px
+    );
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* accuracy dot */
+  .acc-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    display: inline-block;
+    margin-right: 8px;
+    vertical-align: middle;
+    transition: background 0.3s;
+  }
+  .acc-dot.low { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- SVG Dial -->
+  <div class="dial-wrap">
+    <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#00ffe0" stop-opacity="0.08"/>
+          <stop offset="100%" stop-color="#00ffe0" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+
+      <!-- Glow bg -->
+      <circle cx="100" cy="100" r="96" fill="url(#glow)"/>
+
+      <!-- Outer bezel -->
+      <circle cx="100" cy="100" r="96" fill="none" stroke="#1e1e28" stroke-width="2"/>
+      <!-- Inner bezel -->
+      <circle cx="100" cy="100" r="88" fill="none" stroke="#252530" stroke-width="0.5"/>
+
+      <!-- Rotating ring: tick marks + cardinal labels -->
+      <g id="ring">
+        <!-- Major ticks every 10°, minor every 5° -->
+        <g id="ticks"></g>
+        <!-- Cardinal labels -->
+        <text x="100" y="16" text-anchor="middle" dominant-baseline="middle"
+              font-family="Rajdhani,sans-serif" font-size="11" font-weight="600"
+              fill="#00ffe0" letter-spacing="0">N</text>
+        <text x="100" y="186" text-anchor="middle" dominant-baseline="middle"
+              font-family="Rajdhani,sans-serif" font-size="10" fill="#888899">S</text>
+        <text x="186" y="100" text-anchor="middle" dominant-baseline="middle"
+              font-family="Rajdhani,sans-serif" font-size="10" fill="#888899">E</text>
+        <text x="14" y="100" text-anchor="middle" dominant-baseline="middle"
+              font-family="Rajdhani,sans-serif" font-size="10" fill="#888899">W</text>
+      </g>
+
+      <!-- Fixed needle pointing up (North) -->
+      <g class="needle-group">
+        <!-- North half: accent -->
+        <polygon points="100,28 97,100 103,100"
+                 fill="#00ffe0" opacity="0.95"/>
+        <!-- South half: dim -->
+        <polygon points="100,172 97,100 103,100"
+                 fill="#333344"/>
+        <!-- Center dot -->
+        <circle cx="100" cy="100" r="5" fill="#0a0a0c" stroke="#00ffe0" stroke-width="1.5"/>
+        <circle cx="100" cy="100" r="2" fill="#00ffe0"/>
+      </g>
+
+      <!-- Fixed triangle marker at top -->
+      <polygon points="100,6 96,13 104,13" fill="#00ffe0" opacity="0.7"/>
+    </svg>
+  </div>
+
+  <!-- Numeric readout -->
+  <div class="readout">
+    <div class="bearing-value" id="bearingVal">---</div>
+    <div class="bearing-unit">DEGREES</div>
+    <div class="cardinal" id="cardinalVal">—</div>
+  </div>
+
+  <button id="permBtn" onclick="requestPermission()">Enable Compass</button>
+
+  <div class="status" id="status">
+    <span class="acc-dot" id="accDot"></span>
+    <span id="statusText">Waiting for sensor…</span>
+  </div>
+</div>
+
+<script>
+  const ring      = document.getElementById('ring');
+  const bearingEl = document.getElementById('bearingVal');
+  const cardinalEl= document.getElementById('cardinalVal');
+  const statusEl  = document.getElementById('statusText');
+  const accDot    = document.getElementById('accDot');
+  const permBtn   = document.getElementById('permBtn');
+
+  // Build tick marks programmatically
+  const ticksG = document.getElementById('ticks');
+  for (let deg = 0; deg < 360; deg += 5) {
+    const isMajor = deg % 10 === 0;
+    const isCard  = deg % 90 === 0;
+    const r1 = 88;
+    const r2 = isCard ? 72 : (isMajor ? 76 : 82);
+    const rad = (deg - 90) * Math.PI / 180;
+    const x1 = 100 + r1 * Math.cos(rad);
+    const y1 = 100 + r1 * Math.sin(rad);
+    const x2 = 100 + r2 * Math.cos(rad);
+    const y2 = 100 + r2 * Math.sin(rad);
+
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+    line.setAttribute('stroke', isCard ? '#00ffe0' : (isMajor ? '#555566' : '#333344'));
+    line.setAttribute('stroke-width', isCard ? '1.5' : (isMajor ? '1' : '0.6'));
+    ticksG.appendChild(line);
+
+    // Degree numbers every 30°
+    if (isMajor && deg % 30 === 0 && !isCard) {
+      const rLabel = 67;
+      const tx = 100 + rLabel * Math.cos(rad);
+      const ty = 100 + rLabel * Math.sin(rad);
+      const txt = document.createElementNS('http://www.w3.org/2000/svg','text');
+      txt.setAttribute('x', tx); txt.setAttribute('y', ty);
+      txt.setAttribute('text-anchor','middle');
+      txt.setAttribute('dominant-baseline','middle');
+      txt.setAttribute('font-family','Share Tech Mono,monospace');
+      txt.setAttribute('font-size','6');
+      txt.setAttribute('fill','#444458');
+      txt.textContent = deg;
+      ticksG.appendChild(txt);
+    }
+  }
+
+  // Cardinals
+  const cardinals = [
+    [0,'N'], [22.5,'NNE'], [45,'NE'], [67.5,'ENE'],
+    [90,'E'], [112.5,'ESE'], [135,'SE'], [157.5,'SSE'],
+    [180,'S'], [202.5,'SSW'], [225,'SW'], [247.5,'WSW'],
+    [300,'WNW'],[315,'NW'],[337.5,'NNW'],[270,'W']
+  ];
+
+  function toCardinal(b) {
+    const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE',
+                  'S','SSW','SW','WSW','W','WNW','NW','NNW'];
+    return dirs[Math.round(b / 22.5) % 16];
+  }
+
+  let currentBearing = 0;
+  let lastAngle = null;
+
+  function updateBearing(bearing) {
+    const b = ((bearing % 360) + 360) % 360;
+    currentBearing = b;
+
+    // Rotate ring opposite to heading so N always reads at top
+    ring.style.transform = `rotate(${-b}deg)`;
+
+    bearingEl.textContent = String(Math.round(b)).padStart(3, '0');
+    cardinalEl.textContent = toCardinal(b);
+  }
+
+  // ── DeviceOrientationEvent handler ──
+  function handleOrientation(e) {
+    let bearing = null;
+
+    // iOS: webkitCompassHeading is true magnetic north bearing
+    if (typeof e.webkitCompassHeading === 'number') {
+      bearing = e.webkitCompassHeading;
+      const acc = e.webkitCompassAccuracy;
+      if (acc > 0 && acc < 20) {
+        accDot.classList.remove('low');
+        statusEl.textContent = `Accuracy ±${Math.round(acc)}°`;
+      } else {
+        accDot.classList.add('low');
+        statusEl.textContent = acc >= 20 ? `Low accuracy ±${Math.round(acc)}°` : 'Calibrating…';
+      }
+    }
+    // Android: alpha is compass heading (degrees from North, increasing CW)
+    else if (e.alpha !== null && e.alpha !== undefined) {
+      // On Android, alpha=0 means magnetic north
+      bearing = (360 - e.alpha) % 360;
+      accDot.classList.remove('low');
+      statusEl.textContent = 'Live';
+    }
+
+    if (bearing !== null) {
+      updateBearing(bearing);
+      permBtn.style.display = 'none';
+    }
+  }
+
+  function requestPermission() {
+    if (typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission()
+        .then(state => {
+          if (state === 'granted') {
+            window.addEventListener('deviceorientation', handleOrientation, true);
+            permBtn.style.display = 'none';
+          } else {
+            statusEl.textContent = 'Permission denied';
+            accDot.classList.add('low');
+          }
+        })
+        .catch(err => {
+          statusEl.textContent = 'Permission error';
+          accDot.classList.add('low');
+        });
+    }
+  }
+
+  // Start listening
+  if (typeof DeviceOrientationEvent !== 'undefined') {
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+      // iOS 13+ — needs user gesture
+      permBtn.style.display = 'inline-block';
+      statusEl.textContent = 'Tap button to enable';
+    } else {
+      // Android + older iOS
+      window.addEventListener('deviceorientation', handleOrientation, true);
+      statusEl.textContent = 'Listening for sensor…';
+    }
+  } else {
+    statusEl.textContent = 'No orientation sensor detected';
+    accDot.classList.add('low');
+  }
+</script>
+</body>
+</html>
